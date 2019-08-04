@@ -25,7 +25,10 @@ class BoundingBox(object):
     def center(self):
         return ((self.x1 + self.x0) / 2, (self.y1 + self.y0) / 2)
 
-    def move(self, dx, dy):
+    def move(self, dx, dy, dt=None):
+        if dt is not None:
+            dx *= dt
+            dy *= dt
         return BoundingBox(self.x0 + dx, self.y0 + dy, self.x1 + dx, self.y1 + dy)
 
     def overlaps_x(self, other):
@@ -40,34 +43,53 @@ class BoundingBox(object):
         return self.overlaps_x(other) and self.overlaps_y(other)
 
 
+def move_till_first_collision(box, vx, vy, dt, boxes, bounciness=0.0):
+    """
+    Returns:
+        new box, new vx, vy, dt left
+    """
+    new_box = box.move(vx, vy, dt)
+    new_vx, new_vy = vx, vy
+    new = True
+    new_dt = dt
+    first_collision_box = None
+    
+    while new:
+        new = False
+        for other in boxes:
+            if new_box.intersects_with(other):
+                first_collision_box = other
+                lo, hi = 0, new_dt
+                for i in range(6):
+                    mid = (lo + hi) / 2
+                    temp_box = box.move(vx, vy, mid)
+                    if temp_box.intersects_with(other):
+                        hi = mid
+                    else:
+                        lo = mid
+                new_dt = lo
+                new_box = box.move(vx, vy, new_dt)
+                assert not new_box.intersects_with(other)
+                new = True
+                break
+    
+    if first_collision_box is not None:
+        if not box.overlaps_x(first_collision_box):
+            new_vx = -bounciness * vx
+        if not box.overlaps_y(first_collision_box):
+            new_vy = -bounciness * vy
+
+    return new_box, new_vx, new_vy, dt - new_dt
+
+
 def move_and_collide(box, vx, vy, dt, boxes, bounciness=0):
     """Move the box using the velocity and check for collisions.
-
     If any collision happens, change that component of speed to 
     """
-    new_box = box.move(vx * dt, vy * dt)
-    collision_x = False
-    collision_y = False
-
-    for other in boxes:
-        if box is other: continue
-        assert not box.intersects_with(other)
-        if not new_box.intersects_with(other): continue
-        if not box.overlaps_x(other): collision_x = True
-        if not box.overlaps_y(other): collision_y = True
-    
-    vx_after, vy_after = vx, vy
-    if collision_x:
-        vx = 0
-        vx_after = -bounciness * vx
-    if collision_y:
-        vy = 0
-        vy_after = -bounciness * vy
-    
-    # print('effective v =', vx, vy, 'dt =', dt)
-    # print('before: {} after: {}'.format(box, box.move(vx * dt, vy * dt)))
-    
-    return box.move(vx * dt, vy * dt), vx_after, vy_after
+    box, vx, vy, dt = move_till_first_collision(box, vx, vy, dt, boxes, bounciness)
+    if dt > 0:
+        box, vx, vy, dt = move_till_first_collision(box, vx, vy, dt, boxes, bounciness)
+    return box, vx, vy
 
 
 class State(object):
@@ -152,8 +174,8 @@ class Viewport(object):
             self.offset_y = y - 1
         elif y > self.offset_y + 8:
             self.offset_y = y - 8
-        if old != (self.offset_x, self.offset_y):
-            print('New offset:', (self.offset_x, self.offset_y))
+        # if old != (self.offset_x, self.offset_y):
+        #     print('New offset:', (self.offset_x, self.offset_y))
     
     def transform(self, x, y):
         return (x - self.offset_x) * self.scale, (y - self.offset_y) * self.scale
@@ -183,7 +205,7 @@ class View(object):
         ghost_seq = pyglet.image.ImageGrid(ghost_img, 1, 2)
         w = ghost_seq[0].width
         self.ghost = [pyglet.sprite.Sprite(img=g, subpixel=True) for g in ghost_seq]
-        pyglet.clock.schedule_interval(self.update, 1/30)
+        pyglet.clock.schedule_interval(self.update, 1/120)
     
     def update(self, dt):
         if self.joystick:
