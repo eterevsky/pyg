@@ -5,13 +5,82 @@ from pyglet.window import key
 import time, math
 
 
+class BoundingBox(object):
+    """Any enity in the world. Specifies a bounding box.
+    
+    (x0, y0) -- bottom left corner
+    (x1, y1) -- top right corner
+    """
+
+    def __init__(self, x0, y0, x1, y1):
+        self.x0 = x0
+        self.y0 = y0
+        self.x1 = x1
+        self.y1 = y1
+
+    def __str__(self):
+        return '({}, {}) ({}, {})'.format(self.x0, self.y0, self.x1, self.y1)
+
+    @property
+    def center(self):
+        return ((self.x1 + self.x0) / 2, (self.y1 + self.y0) / 2)
+
+    def move(self, dx, dy):
+        return BoundingBox(self.x0 + dx, self.y0 + dy, self.x1 + dx, self.y1 + dy)
+
+    def overlaps_x(self, other):
+        """Checks whether two boxes projection on X axis overlap."""
+        return self.x0 < other.x1 and other.x0 < self.x1
+    
+    def overlaps_y(self, other):
+        """Checks whether two boxes projection on X axis overlap."""
+        return self.y0 < other.y1 and self.y1 > other.y0
+    
+    def intersects_with(self, other):
+        return self.overlaps_x(other) and self.overlaps_y(other)
+
+
+def move_and_collide(box, vx, vy, dt, boxes, bounciness=0):
+    """Move the box using the velocity and check for collisions.
+
+    If any collision happens, change that component of speed to 
+    """
+    new_box = box.move(vx * dt, vy * dt)
+    collision_x = False
+    collision_y = False
+
+    for other in boxes:
+        if box is other: continue
+        assert not box.intersects_with(other)
+        if not new_box.intersects_with(other): continue
+        if not box.overlaps_x(other): collision_x = True
+        if not box.overlaps_y(other): collision_y = True
+    
+    vx_after, vy_after = vx, vy
+    if collision_x:
+        vx = 0
+        vx_after = -bounciness * vx
+    if collision_y:
+        vy = 0
+        vy_after = -bounciness * vy
+    
+    # print('effective v =', vx, vy, 'dt =', dt)
+    # print('before: {} after: {}'.format(box, box.move(vx * dt, vy * dt)))
+    
+    return box.move(vx * dt, vy * dt), vx_after, vy_after
+
+
 class State(object):
     def __init__(self):
-        self.ghost_x = 1
-        self.ghost_y = 0
+        self.ghost_box = BoundingBox(0, 0, 1, 1)
+        self.boxes = [
+            BoundingBox(-100, -100, 100, 0),
+            BoundingBox(2, 0, 3, 1),
+            BoundingBox(4, 0, 6, 2),
+        ]
         self.vx = 0
         self.vy = 0
-        self.base_acc = 0
+        self.player_acc = 0
         self.direction = 0
 
     @property
@@ -19,16 +88,19 @@ class State(object):
         return 5 * math.sin((time.time() % 2) * math.pi)
     
     def accelerate(self, dir):
-        self.base_acc += dir
+        self.player_acc += dir
 
     def jump(self):
-        if self.ghost_y == 0:
-            self.vy = 10
+        for box in self.boxes:
+            if self.ghost_box.overlaps_x(box) and 0 <= self.ghost_box.y0 - box.y1 < 0.1:
+                print('jump!')
+                self.vy = 10
 
     def update(self, dt, acc_x, acc_y):
         if acc_x is None:
-            base_acc = max(1, min(-1, self.base_acc))
-            ax = 20 * base_acc
+            self.player_acc = min(1, max(-1, self.player_acc))
+            ax = 20 * self.player_acc
+
         else:
             ax = 20 * acc_x
 
@@ -49,14 +121,10 @@ class State(object):
         elif self.vx < -0.1:
             self.direction = 0
 
-        self.ghost_x += dt * self.vx
-
         self.vy -= 15 * dt
-        self.ghost_y += dt * self.vy
-        if self.ghost_y < 0:
-            self.ghost_y = 0
-            self.vy = 0
 
+        self.ghost_box, self.vx, self.vy = move_and_collide(
+            self.ghost_box, self.vx, self.vy, dt, self.boxes, 0)
 
 
 class Viewport(object):
@@ -71,24 +139,29 @@ class Viewport(object):
         self.offset_x = 0
         self.offset_y = 0
         self.scale = self.window.height / 9
-    
+
     def update(self, x, y):
+        old = (self.offset_x, self.offset_y)
         self.scale = self.window.height / 9
         scaled_width = self.window.width / self.scale
-        if x < self.offset_x + 3 - (16 - scaled_width)/2:
-            self.offset_x = x - 3 + (16 - scaled_width)/2
-        elif x > self.offset_x + 13 - (16 - scaled_width)/2:
-            self.offset_x = x - 13 + (16 - scaled_width)/2
+        if x < self.offset_x + 3 - (16 - scaled_width) / 2:
+            self.offset_x = x - 3 + (16 - scaled_width) / 2
+        elif x > self.offset_x + 13 - (16 - scaled_width) / 2:
+            self.offset_x = x - 13 + (16 - scaled_width) / 2
         if y < self.offset_y + 1:
             self.offset_y = y - 1
         elif y > self.offset_y + 8:
             self.offset_y = y - 8
+        if old != (self.offset_x, self.offset_y):
+            print('New offset:', (self.offset_x, self.offset_y))
     
     def transform(self, x, y):
         return (x - self.offset_x) * self.scale, (y - self.offset_y) * self.scale
-
+    
 
 class View(object):
+    """Main loop and interface with Pyglet."""
+
     def __init__(self, state):
         self.state = state
         self.window = pyglet.window.Window(
@@ -109,10 +182,8 @@ class View(object):
         ghost_img = pyglet.resource.image('res/ghost.png')
         ghost_seq = pyglet.image.ImageGrid(ghost_img, 1, 2)
         w = ghost_seq[0].width
-        ghost_seq[0].anchor_x = w / 2
-        ghost_seq[1].anchor_x = w / 2
         self.ghost = [pyglet.sprite.Sprite(img=g, subpixel=True) for g in ghost_seq]
-        pyglet.clock.schedule_interval(self.update, 1/240)
+        pyglet.clock.schedule_interval(self.update, 1/30)
     
     def update(self, dt):
         if self.joystick:
@@ -123,22 +194,33 @@ class View(object):
     def on_draw(self):
         self.window.clear()
 
-        gx, gy = (self.state.ghost_x, self.state.ghost_y)
-        self.viewport.update(gx, gy)
-        gtx, gty = self.viewport.transform(gx, gy)
+        cx, cy = self.state.ghost_box.center
+        self.viewport.update(cx, cy)
+
+        coords = []
+        colors = []
+        for box in self.state.boxes:
+            x0, y0 = self.viewport.transform(box.x0, box.y0)
+            x1, y1 = self.viewport.transform(box.x1, box.y1)
+            coords.extend((x0, y0,  x1, y0,  x1, y1,  x0, y1))
+            colors.extend([128] * 12)
+
+        pyglet.graphics.draw(4 * len(self.state.boxes), pyglet.gl.GL_QUADS,
+                             ('v2f', coords), ('c3B', colors))
+
+        x0t, y0t = self.viewport.transform(self.state.ghost_box.x0, self.state.ghost_box.y0)
+        x1t, y1t = self.viewport.transform(self.state.ghost_box.x1, self.state.ghost_box.y1)
+        pyglet.graphics.draw(
+            4, pyglet.gl.GL_LINE_LOOP,
+            ('v2f', (x0t, y0t,  x1t, y0t,  x1t, y1t,  x0t, y1t)),
+            ('c3B', [255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0]))
+
+        gtx, gty = self.viewport.transform(self.state.ghost_box.x0, self.state.ghost_box.y0)
         ghost = self.ghost[self.state.direction]
         ghost.update(x=gtx, y=gty, rotation=self.state.rotation,
-                          scale=self.viewport.scale/16)
+                     scale=self.viewport.scale / 16)
         ghost.draw()
 
-        _, ground_y = self.viewport.transform(0, 0)
-        pyglet.graphics.draw(
-            4, pyglet.gl.GL_QUADS,
-            ('v2f', (0, 0,
-                     self.window.width, 0,
-                     self.window.width, ground_y,
-                     0, ground_y)),
-            ('c3B', (128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128)))
         self.fps.draw()
 
     def on_key_press(self, symbol, modifiers):
