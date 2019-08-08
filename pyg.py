@@ -127,7 +127,7 @@ class State(object):
                 self.vy = 10
 
     def update(self, dt, acc_x, acc_y):
-        if self.dead: return
+        if self.dead: return 'dead'
 
         if acc_x is None:
             self.player_acc = min(1, max(-1, self.player_acc))
@@ -161,6 +161,8 @@ class State(object):
         if not self.level_box.contains(self.ghost_box):
             self.dead = True
 
+        return 'dead' if self.dead else 'normal'
+
 
 class Viewport(object):
     """Maintain the transform world -> screen so that 
@@ -169,16 +171,21 @@ class Viewport(object):
     - main character is in the screen
     """
 
-    def __init__(self, window):
-        self.window = window
+    def __init__(self):
         self.offset_x = 0
         self.offset_y = 0
-        self.scale = self.window.height / 9
+        self.scale = 1
 
-    def update(self, x, y):
+    def update(self, x, y, w, h):
+        """Update the viewport transformation.
+
+        Args:
+            x, y: coordinates of the tracked object
+            w, h: width and height of the window/screen
+        """
         old = (self.offset_x, self.offset_y)
-        self.scale = self.window.height / 9
-        scaled_width = self.window.width / self.scale
+        self.scale = h / 9
+        scaled_width = w / self.scale
         if x < self.offset_x + 3 - (16 - scaled_width) / 2:
             self.offset_x = x - 3 + (16 - scaled_width) / 2
         elif x > self.offset_x + 13 - (16 - scaled_width) / 2:
@@ -187,32 +194,54 @@ class Viewport(object):
             self.offset_y = y - 1
         elif y > self.offset_y + 8:
             self.offset_y = y - 8
-        # if old != (self.offset_x, self.offset_y):
-        #     print('New offset:', (self.offset_x, self.offset_y))
     
     def transform(self, x, y):
         return (x - self.offset_x) * self.scale, (y - self.offset_y) * self.scale
+
+        
+class NoopView(object):
+    NAME = 'noop'
+
+    def __init__(self):
+        pass
+    
+    def activate(self, state, window):
+        pass
+    
+    def draw(self, state, window):
+        pass
+
+    def on_key_press(self, state, symbol, modifiers):
+        pass
+    
+    def on_key_release(self, state, symbol, modifiers):
+        pass
+
+    def on_joybutton_press(self, state, joystick, button):
+        pass
+
+
+class DeadView(NoopView):
+    NAME = 'dead'
+
+    def __init__(self):
+        super().__init__()
+
+    def draw(self, state, window):
+        window.clear()
+        label = pyglet.text.Label(text='You are dead',
+            anchor_x='center', anchor_y='center', x=window.width/2, y=window.height/2)
+        label.draw()
     
 
-class View(object):
+class NormalView(object):
     """Main loop and interface with Pyglet."""
 
-    def __init__(self, state):
-        self.state = state
-        self.window = pyglet.window.Window(
-            config=gl.Config(double_buffer=True), fullscreen=False)
-        print('{}x{}'.format(self.window.width, self.window.height))
+    NAME = 'normal'
 
-        self.viewport = Viewport(self.window)
-
-        self.window.push_handlers(self)
-
-        self.joystick = None
-        joysticks = pyglet.input.get_joysticks()
-        if joysticks:
-            self.joystick = joysticks[0]
-            self.joystick.open()
-            self.joystick.push_handlers(self)
+    def __init__(self):
+        # super().__init__()
+        self.viewport = Viewport()
 
         ghost_img = pyglet.resource.image('res/ghost.png')
         ghost_seq = pyglet.image.ImageGrid(ghost_img, 1, 2)
@@ -220,54 +249,27 @@ class View(object):
             g.anchor_x = g.width / 2
             g.anchor_y = g.width / 2
         self.ghost = [pyglet.sprite.Sprite(img=g, subpixel=True) for g in ghost_seq]
-        pyglet.clock.schedule_interval(self.update, 1/240)
 
-        self._init_counters()
+        self.coords = pyglet.text.Label(anchor_x='left', anchor_y='top')
     
-    def update(self, dt):
-        if self.joystick:
-            self.state.update(dt, self.joystick.x, self.joystick.y)
-        else:
-            self.state.update(dt, None, None)
-    
-    def _init_counters(self):
-        self.fps = pyglet.window.FPSDisplay(self.window)
-        self.fps.label = pyglet.text.Label(
-            anchor_x='right', anchor_y='top', x=self.window.width, y=self.window.height)
+    def activate(self, state, window):
+        self.coords = pyglet.text.Label(anchor_x='left', anchor_y='top', x=0, y=window.height)
 
-        self.coords = pyglet.text.Label(anchor_x='left', anchor_y='top', x=0, y=self.window.height)
+    def draw(self, state, window):
+        window.clear()
 
-    def draw_dead(self):
-        self.window.clear()
-        label = pyglet.text.Label(text='You are dead',
-            anchor_x='center', anchor_y='center', x=self.window.width/2, y=self.window.height/2)
-        label.draw()
-
-    def on_resize(self, width, height):
-        print('fullscreen:', self.window.fullscreen)
-        self.window.set_exclusive_mouse(self.window.fullscreen)
-        self.window.set_mouse_visible(not self.window.fullscreen)
-        self._init_counters()
-
-    def on_draw(self):
-        if self.state.dead:
-            self.draw_dead()
-            return
-
-        self.window.clear()
-
-        cx, cy = self.state.ghost_box.center
-        self.viewport.update(cx, cy)
+        cx, cy = state.ghost_box.center
+        self.viewport.update(cx, cy, window.width, window.height)
 
         coords = []
         colors = []
-        for box in self.state.boxes:
+        for box in state.boxes:
             x0, y0 = self.viewport.transform(box.x0, box.y0)
             x1, y1 = self.viewport.transform(box.x1, box.y1)
             coords.extend((x0, y0,  x1, y0,  x1, y1,  x0, y1))
             colors.extend([128] * 12)
 
-        pyglet.graphics.draw(4 * len(self.state.boxes), pyglet.gl.GL_QUADS,
+        pyglet.graphics.draw(4 * len(state.boxes), pyglet.gl.GL_QUADS,
                              ('v2f', coords), ('c3B', colors))
 
         # # Drawing the border around the ghost
@@ -278,56 +280,104 @@ class View(object):
         #     ('v2f', (x0t, y0t,  x1t, y0t,  x1t, y1t,  x0t, y1t)),
         #     ('c3B', [255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0]))
 
-        ghost_center = self.state.ghost_box.center
+        ghost_center = state.ghost_box.center
         gtx, gty = self.viewport.transform(ghost_center[0], ghost_center[1])
-        ghost = self.ghost[self.state.direction]
-        ghost.update(x=gtx, y=gty, rotation=self.state.rotation,
+        ghost = self.ghost[state.direction]
+        ghost.update(x=gtx, y=gty, rotation=state.rotation,
                      scale=self.viewport.scale / 16)
         ghost.draw()
 
-        self.coords.text = '({:.2f}, {:.2f})'.format(*self.state.ghost_box.center)
+        self.coords.text = '({:.2f}, {:.2f})'.format(*state.ghost_box.center)
         self.coords.draw()
 
+    def on_key_press(self, state, symbol, modifiers):
+        if symbol == key.RIGHT:
+            state.accelerate(1)
+        elif symbol == key.LEFT:
+            state.accelerate(-1)
+        elif symbol == key.SPACE:
+            state.jump()
+
+    def on_key_release(self, state, symbol, modifiers):
+        if symbol == key.RIGHT:
+            state.accelerate(-1)
+        elif symbol == key.LEFT:
+            state.accelerate(1)
+
+    def on_joybutton_press(self, state, joystick, button):
+        if button == 0:
+            state.jump()
+
+
+class Manager(object):
+    def __init__(self, state):
+        self.state = state
+        self.window = pyglet.window.Window(
+            config=gl.Config(double_buffer=True), fullscreen=False)
+
+        self.joystick = None
+        joysticks = pyglet.input.get_joysticks()
+        if joysticks:
+            self.joystick = joysticks[0]
+            self.joystick.open()
+            self.joystick.push_handlers(self)
+
+        self.views = {}
+        self.add_view(NoopView())
+        self.set_active_view(NoopView.NAME)
+    
+        self.fps = pyglet.window.FPSDisplay(self.window)
+        self.fps.label = pyglet.text.Label(
+            anchor_x='right', anchor_y='top', x=self.window.width, y=self.window.height)
+
+        pyglet.clock.schedule_interval(self.update, 1/240)
+        self.window.push_handlers(self)
+
+    def add_view(self, view):
+        self.views[view.NAME] = view
+    
+    def set_active_view(self, view_name):
+        self.active_view = self.views[view_name]
+        self.active_view.activate(self.state, self.window)
+
+    def on_resize(self, width, height):
+        self.window.set_exclusive_mouse(self.window.fullscreen)
+        self.window.set_mouse_visible(not self.window.fullscreen)
+        self.active_view.activate(self.state, self.window)
+
+    def on_draw(self):
+        self.active_view.draw(self.state, self.window)
         self.fps.draw()
 
     def on_key_press(self, symbol, modifiers):
         if symbol == key.F:
             self.window.set_fullscreen(not self.window.fullscreen)
-            print('{}x{}'.format(self.window.width, self.window.height))
-        elif symbol == key.RIGHT:
-            self.state.accelerate(1)
-        elif symbol == key.LEFT:
-            self.state.accelerate(-1)
-        elif symbol == key.SPACE:
-            self.state.jump()
+        else:
+            self.active_view.on_key_press(self.state, symbol, modifiers)
 
     def on_key_release(self, symbol, modifiers):
-        if symbol == key.RIGHT:
-            self.state.accelerate(-1)
-        elif symbol == key.LEFT:
-            self.state.accelerate(1)
+        self.active_view.on_key_release(self.state, symbol, modifiers)
 
-    def on_joybutton_press(self, joystick, button):
-        print('joystick button pressed:', button)
-        if button == 0:
-            self.state.jump()
+    def on_joybutton_press(self, state, joystick, button):
+        self.active_view.on_joybutton_press(self.state, joystick, button)
 
-    def on_joybutton_release(self, joystick, button):
-        print('joystick button released:', button)
+    def update(self, dt):
+        if self.joystick:
+            x, y = self.joystick.x, self.joystick.y
+        else:
+            x, y = None, None 
 
-    def on_joyhat_motion(self, joystick, hat_x, hat_y):
-        print('hat_x:', hat_x, 'hat_y:', hat_y)
-
+        new_view = self.state.update(dt, None, None)
+        if new_view != self.active_view.NAME:
+            self.set_active_view(new_view)    
+    
 
 def main():
-    display = pyglet.canvas.get_display()
-    print('display:', display)
-    screens = display.get_screens()
-    print('screens:', screens)
-    joysticks = pyglet.input.get_joysticks()
-    print('joysticks:', joysticks)
     state = State()
-    view = View(state)
+    manager = Manager(state)
+    manager.add_view(NormalView())
+    manager.add_view(DeadView())
+    manager.set_active_view(NormalView.NAME)
     pyglet.app.run()
 
 
