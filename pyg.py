@@ -42,6 +42,10 @@ class BoundingBox(object):
     def intersects_with(self, other):
         return self.overlaps_x(other) and self.overlaps_y(other)
 
+    def contains(self, other):
+        return (self.x0 <= other.x0 and self.y0 <= other.y0 and
+                other.x1 <= self.x1 and other.y1 <= other.y1)
+
 
 def move_till_first_collision(box, vx, vy, dt, boxes, bounciness=0.0):
     """
@@ -96,14 +100,19 @@ class State(object):
     def __init__(self):
         self.ghost_box = BoundingBox(0, 0, 1, 1)
         self.boxes = [
-            BoundingBox(-100, -100, 100, 0),
+            BoundingBox(-100, -100, 7, 0),
+            BoundingBox(9, -100, 100, 0),
             BoundingBox(2, 0, 3, 1),
             BoundingBox(4, 0, 6, 2),
         ]
+
+        # If the ghost goes outside this space, it dies.
+        self.level_box = BoundingBox(-100, -100, 100, 100)
         self.vx = 0
         self.vy = 0
         self.player_acc = 0
         self.direction = 0
+        self.dead = False
 
     @property
     def rotation(self):
@@ -118,6 +127,8 @@ class State(object):
                 self.vy = 10
 
     def update(self, dt, acc_x, acc_y):
+        if self.dead: return
+
         if acc_x is None:
             self.player_acc = min(1, max(-1, self.player_acc))
             ax = 20 * self.player_acc
@@ -146,6 +157,9 @@ class State(object):
 
         self.ghost_box, self.vx, self.vy = move_and_collide(
             self.ghost_box, self.vx, self.vy, dt, self.boxes, 0)
+        
+        if not self.level_box.contains(self.ghost_box):
+            self.dead = True
 
 
 class Viewport(object):
@@ -188,7 +202,13 @@ class View(object):
         self.window = pyglet.window.Window(
             config=gl.Config(double_buffer=True), fullscreen=False)
         print('{}x{}'.format(self.window.width, self.window.height))
+
         self.fps = pyglet.window.FPSDisplay(self.window)
+        self.fps.label = pyglet.text.Label(
+            anchor_x='right', anchor_y='top', x=self.window.width, y=self.window.height)
+
+        self.coords = pyglet.text.Label(anchor_x='left', anchor_y='top', x=0, y=self.window.height)
+
         self.window.set_exclusive_mouse()
         self.viewport = Viewport(self.window)
 
@@ -206,15 +226,25 @@ class View(object):
             g.anchor_x = g.width / 2
             g.anchor_y = g.width / 2
         self.ghost = [pyglet.sprite.Sprite(img=g, subpixel=True) for g in ghost_seq]
-        pyglet.clock.schedule_interval(self.update, 1/120)
+        pyglet.clock.schedule_interval(self.update, 1/240)
     
     def update(self, dt):
         if self.joystick:
             self.state.update(dt, self.joystick.x, self.joystick.y)
         else:
             self.state.update(dt, None, None)
+    
+    def draw_dead(self):
+        self.window.clear()
+        label = pyglet.text.Label(text='You are dead',
+            anchor_x='center', anchor_y='center', x=self.window.width/2, y=self.window.height/2)
+        label.draw()
 
     def on_draw(self):
+        if self.state.dead:
+            self.draw_dead()
+            return
+
         self.window.clear()
 
         cx, cy = self.state.ghost_box.center
@@ -245,6 +275,9 @@ class View(object):
         ghost.update(x=gtx, y=gty, rotation=self.state.rotation,
                      scale=self.viewport.scale / 16)
         ghost.draw()
+
+        self.coords.text = '({:.2f}, {:.2f})'.format(*self.state.ghost_box.center)
+        self.coords.draw()
 
         self.fps.draw()
 
