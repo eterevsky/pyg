@@ -115,7 +115,6 @@ class State(object):
     def jump(self):
         for box in self.boxes:
             if self.ghost_box.overlaps_x(box) and 0 <= self.ghost_box.y0 - box.y1 < 0.1:
-                print('jump!')
                 self.vy = 10
 
     def update(self, dt, acc_x, acc_y):
@@ -203,7 +202,9 @@ class View(object):
 
         ghost_img = pyglet.resource.image('res/ghost.png')
         ghost_seq = pyglet.image.ImageGrid(ghost_img, 1, 2)
-        w = ghost_seq[0].width
+        for g in ghost_seq:
+            g.anchor_x = g.width / 2
+            g.anchor_y = g.width / 2
         self.ghost = [pyglet.sprite.Sprite(img=g, subpixel=True) for g in ghost_seq]
         pyglet.clock.schedule_interval(self.update, 1/120)
     
@@ -230,14 +231,16 @@ class View(object):
         pyglet.graphics.draw(4 * len(self.state.boxes), pyglet.gl.GL_QUADS,
                              ('v2f', coords), ('c3B', colors))
 
-        x0t, y0t = self.viewport.transform(self.state.ghost_box.x0, self.state.ghost_box.y0)
-        x1t, y1t = self.viewport.transform(self.state.ghost_box.x1, self.state.ghost_box.y1)
-        pyglet.graphics.draw(
-            4, pyglet.gl.GL_LINE_LOOP,
-            ('v2f', (x0t, y0t,  x1t, y0t,  x1t, y1t,  x0t, y1t)),
-            ('c3B', [255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0]))
+        # # Drawing the border around the ghost
+        # x0t, y0t = self.viewport.transform(self.state.ghost_box.x0, self.state.ghost_box.y0)
+        # x1t, y1t = self.viewport.transform(self.state.ghost_box.x1, self.state.ghost_box.y1)
+        # pyglet.graphics.draw(
+        #     4, pyglet.gl.GL_LINE_LOOP,
+        #     ('v2f', (x0t, y0t,  x1t, y0t,  x1t, y1t,  x0t, y1t)),
+        #     ('c3B', [255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0]))
 
-        gtx, gty = self.viewport.transform(self.state.ghost_box.x0, self.state.ghost_box.y0)
+        ghost_center = self.state.ghost_box.center
+        gtx, gty = self.viewport.transform(ghost_center[0], ghost_center[1])
         ghost = self.ghost[self.state.direction]
         ghost.update(x=gtx, y=gty, rotation=self.state.rotation,
                      scale=self.viewport.scale / 16)
@@ -246,7 +249,6 @@ class View(object):
         self.fps.draw()
 
     def on_key_press(self, symbol, modifiers):
-        print('Pressed: {} {}'.format(symbol, modifiers))
         if symbol == key.F:
             self.window.set_fullscreen(not self.window.fullscreen)
             print('{}x{}'.format(self.window.width, self.window.height))
@@ -258,7 +260,6 @@ class View(object):
             self.state.jump()
 
     def on_key_release(self, symbol, modifiers):
-        print('Released: {} {}'.format(symbol, modifiers))
         if symbol == key.RIGHT:
             self.state.accelerate(-1)
         elif symbol == key.LEFT:
