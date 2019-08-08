@@ -203,16 +203,10 @@ class View(object):
             config=gl.Config(double_buffer=True), fullscreen=False)
         print('{}x{}'.format(self.window.width, self.window.height))
 
-        self.fps = pyglet.window.FPSDisplay(self.window)
-        self.fps.label = pyglet.text.Label(
-            anchor_x='right', anchor_y='top', x=self.window.width, y=self.window.height)
-
-        self.coords = pyglet.text.Label(anchor_x='left', anchor_y='top', x=0, y=self.window.height)
-
-        self.window.set_exclusive_mouse()
         self.viewport = Viewport(self.window)
 
-        self.window.push_handlers(self.on_draw, self.on_key_press, self.on_key_release)
+        self.window.push_handlers(self)
+
         self.joystick = None
         joysticks = pyglet.input.get_joysticks()
         if joysticks:
@@ -227,6 +221,8 @@ class View(object):
             g.anchor_y = g.width / 2
         self.ghost = [pyglet.sprite.Sprite(img=g, subpixel=True) for g in ghost_seq]
         pyglet.clock.schedule_interval(self.update, 1/240)
+
+        self._init_counters()
     
     def update(self, dt):
         if self.joystick:
@@ -234,11 +230,24 @@ class View(object):
         else:
             self.state.update(dt, None, None)
     
+    def _init_counters(self):
+        self.fps = pyglet.window.FPSDisplay(self.window)
+        self.fps.label = pyglet.text.Label(
+            anchor_x='right', anchor_y='top', x=self.window.width, y=self.window.height)
+
+        self.coords = pyglet.text.Label(anchor_x='left', anchor_y='top', x=0, y=self.window.height)
+
     def draw_dead(self):
         self.window.clear()
         label = pyglet.text.Label(text='You are dead',
             anchor_x='center', anchor_y='center', x=self.window.width/2, y=self.window.height/2)
         label.draw()
+
+    def on_resize(self, width, height):
+        print('fullscreen:', self.window.fullscreen)
+        self.window.set_exclusive_mouse(self.window.fullscreen)
+        self.window.set_mouse_visible(not self.window.fullscreen)
+        self._init_counters()
 
     def on_draw(self):
         if self.state.dead:
