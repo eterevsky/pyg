@@ -97,6 +97,8 @@ def move_and_collide(box, vx, vy, dt, boxes, bounciness=0):
 
 
 class State(object):
+    """The state of the game world."""
+
     def __init__(self):
         self.ghost_box = BoundingBox(0, 0, 1, 1)
         self.boxes = [
@@ -105,6 +107,7 @@ class State(object):
             BoundingBox(2, 0, 3, 1),
             BoundingBox(4, 0, 6, 2),
         ]
+        self.goal = BoundingBox()
 
         # If the ghost goes outside this space, it dies.
         self.level_box = BoundingBox(-100, -100, 100, 100)
@@ -198,34 +201,44 @@ class Viewport(object):
     def transform(self, x, y):
         return (x - self.offset_x) * self.scale, (y - self.offset_y) * self.scale
 
-        
-class NoopView(object):
-    NAME = 'noop'
 
-    def __init__(self):
-        pass
-    
+class View(object):
+    """An interface to render one of the screens in the game.
+
+    This class if just for documentation purposes, should not be initiated directly.
+    """
+
+    NAME = 'default'
+
     def activate(self, state, window):
+        """When called, tells the view, that it is the current view now."""
         pass
     
     def draw(self, state, window):
-        pass
+        """Renders the screen. Has to be overriden."""
+        raise NotImplementedError()
 
     def on_key_press(self, state, symbol, modifiers):
+        """Called on key press event. The view is responsible for passing the event to the state."""
         pass
     
     def on_key_release(self, state, symbol, modifiers):
+        """Called on key release event. The view is responsible for passing the event to the state."""
         pass
 
     def on_joybutton_press(self, state, joystick, button):
         pass
 
 
-class DeadView(NoopView):
-    NAME = 'dead'
+class NoopView(View):
+    NAME = 'noop'
+    
+    def draw(self, state, window):
+        pass
 
-    def __init__(self):
-        super().__init__()
+
+class DeadView(View):
+    NAME = 'dead'
 
     def draw(self, state, window):
         window.clear()
@@ -234,13 +247,12 @@ class DeadView(NoopView):
         label.draw()
     
 
-class NormalView(object):
+class NormalView(View):
     """Main loop and interface with Pyglet."""
 
     NAME = 'normal'
 
     def __init__(self):
-        # super().__init__()
         self.viewport = Viewport()
 
         ghost_img = pyglet.resource.image('res/ghost.png')
@@ -319,6 +331,7 @@ class Manager(object):
         joysticks = pyglet.input.get_joysticks()
         if joysticks:
             self.joystick = joysticks[0]
+            print('Found joystick', self.joystick)
             self.joystick.open()
             self.joystick.push_handlers(self)
 
