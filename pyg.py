@@ -1,8 +1,8 @@
+import math
 import pyglet
 from pyglet import gl
 from pyglet.window import key
-
-import time, math
+import time
 
 
 class BoundingBox(object):
@@ -43,8 +43,11 @@ class BoundingBox(object):
         return self.overlaps_x(other) and self.overlaps_y(other)
 
     def contains(self, other):
-        return (self.x0 <= other.x0 and self.y0 <= other.y0 and
-                other.x1 <= self.x1 and other.y1 <= other.y1)
+        if hasattr(other, 'x0'):
+            return (self.x0 <= other.x0 and self.y0 <= other.y0 and
+                    other.x1 <= self.x1 and other.y1 <= other.y1)
+        else:
+            return self.x0 <= other[0] <= self.x1 and self.y0 <= other[1] <= self.y1
 
 
 def move_till_first_collision(box, vx, vy, dt, boxes, bounciness=0.0):
@@ -107,7 +110,7 @@ class State(object):
             BoundingBox(2, 0, 3, 1),
             BoundingBox(4, 0, 6, 2),
         ]
-        self.goal = BoundingBox()
+        self.goal = BoundingBox(20, 2, 22, 4)
 
         # If the ghost goes outside this space, it dies.
         self.level_box = BoundingBox(-100, -100, 100, 100)
@@ -116,6 +119,7 @@ class State(object):
         self.player_acc = 0
         self.direction = 0
         self.dead = False
+        self.won = False
 
     @property
     def rotation(self):
@@ -131,6 +135,7 @@ class State(object):
 
     def update(self, dt, acc_x, acc_y):
         if self.dead: return 'dead'
+        if self.won: return 'win'
 
         if acc_x is None:
             self.player_acc = min(1, max(-1, self.player_acc))
@@ -163,8 +168,13 @@ class State(object):
         
         if not self.level_box.contains(self.ghost_box):
             self.dead = True
-
-        return 'dead' if self.dead else 'normal'
+            return 'dead'
+        
+        if self.goal.contains(self.ghost_box):
+            self.won = True
+            return 'win'
+        
+        return 'normal'
 
 
 class Viewport(object):
@@ -247,6 +257,16 @@ class DeadView(View):
         label.draw()
     
 
+class WinView(View):
+    NAME = 'win'
+
+    def draw(self, state, window):
+        window.clear()
+        label = pyglet.text.Label(text='You won!',
+            anchor_x='center', anchor_y='center', x=window.width/2, y=window.height/2)
+        label.draw()
+    
+
 class NormalView(View):
     """Main loop and interface with Pyglet."""
 
@@ -280,8 +300,13 @@ class NormalView(View):
             x1, y1 = self.viewport.transform(box.x1, box.y1)
             coords.extend((x0, y0,  x1, y0,  x1, y1,  x0, y1))
             colors.extend([128] * 12)
+        
+        x0, y0 = self.viewport.transform(state.goal.x0, state.goal.y0)
+        x1, y1 = self.viewport.transform(state.goal.x1, state.goal.y1)
+        coords.extend((x0, y0,  x1, y0,  x1, y1,  x0, y1))
+        colors.extend([0, 128, 0] * 4)
 
-        pyglet.graphics.draw(4 * len(state.boxes), pyglet.gl.GL_QUADS,
+        pyglet.graphics.draw(int(len(coords) / 2), pyglet.gl.GL_QUADS,
                              ('v2f', coords), ('c3B', colors))
 
         # # Drawing the border around the ghost
@@ -390,6 +415,7 @@ def main():
     manager = Manager(state)
     manager.add_view(NormalView())
     manager.add_view(DeadView())
+    manager.add_view(WinView())
     manager.set_active_view(NormalView.NAME)
     pyglet.app.run()
 
