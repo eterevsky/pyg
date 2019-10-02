@@ -45,7 +45,7 @@ class BoundingBox(object):
     def contains(self, other):
         if hasattr(other, 'x0'):
             return (self.x0 <= other.x0 and self.y0 <= other.y0 and
-                    other.x1 <= self.x1 and other.y1 <= other.y1)
+                    other.x1 <= self.x1 and other.y1 <= self.y1)
         else:
             return self.x0 <= other[0] <= self.x1 and self.y0 <= other[1] <= self.y1
 
@@ -103,14 +103,21 @@ class State(object):
     """The state of the game world."""
 
     def __init__(self):
-        self.ghost_box = BoundingBox(0, 0, 1, 1)
+        self.ghost_box = BoundingBox(0, 0, 0.8, 0.8)
         self.boxes = [
             BoundingBox(-100, -100, 7, 0),
             BoundingBox(9, -100, 100, 0),
             BoundingBox(2, 0, 3, 1),
             BoundingBox(4, 0, 6, 2),
         ]
-        self.goal = BoundingBox(20, 2, 22, 4)
+        for x in range(10):
+            for y in range(3):
+                self.boxes.append(BoundingBox(2.5*x + (y % 2) + 12,
+                                              2.5*y + 1,
+                                              2.5*x + (y % 2) + 13,
+                                              2.5*y + 2))
+
+        self.goal = BoundingBox(40, 2, 42, 4)
 
         # If the ghost goes outside this space, it dies.
         self.level_box = BoundingBox(-100, -100, 100, 100)
