@@ -389,6 +389,8 @@ class Manager(object):
         self.window.set_exclusive_mouse(self.window.fullscreen)
         self.window.set_mouse_visible(not self.window.fullscreen)
         self.active_view.activate(self.state, self.window)
+        self.fps.label = pyglet.text.Label(
+            anchor_x='right', anchor_y='top', x=self.window.width, y=self.window.height)
 
     def on_draw(self):
         self.active_view.draw(self.state, self.window)
