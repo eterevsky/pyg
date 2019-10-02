@@ -99,6 +99,27 @@ def move_and_collide(box, vx, vy, dt, boxes, bounciness=0):
     return box, vx, vy
 
 
+class Jump(object):
+    # The amount of time after
+    # The amount of time for which we accelerate vertically after we've bounced.
+    JUMP_DURATION = 0.1
+    # Vertical acceleration during the jump duration
+    ACCELERATION = 100
+
+    def __init__(self, t):
+        self.press_time = t
+        self.bounce_time = None
+    
+    def bounce(self, t):
+        self.bounce_time = None
+    
+    def vert_acc(self, t):
+        if self.bounce_time is None or t - self.bounce_time > self.JUMP_DURATION:
+            return 0
+        else:
+            return self.ACCELERATION
+
+
 class State(object):
     """The state of the game world."""
 
@@ -128,6 +149,8 @@ class State(object):
         self.dead = False
         self.won = False
 
+        self.
+
     @property
     def rotation(self):
         return 5 * math.sin((time.time() % 2) * math.pi)
@@ -135,7 +158,8 @@ class State(object):
     def accelerate(self, dir):
         self.player_acc += dir
 
-    def jump(self):
+    def jump(self, start):
+        """Initiate or finish the jump"""
         for box in self.boxes:
             if self.ghost_box.overlaps_x(box) and 0 <= self.ghost_box.y0 - box.y1 < 0.1:
                 self.vy = 10
