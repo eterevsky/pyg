@@ -450,10 +450,10 @@ class Manager(object):
     def on_key_release(self, symbol, modifiers):
         self.active_view.on_key_release(self.state, symbol, modifiers)
 
-    def on_joybutton_press(self, state, joystick, button):
+    def on_joybutton_press(self, joystick, button):
         self.active_view.on_joybutton_press(self.state, joystick, button)
 
-    def on_joybutton_release(self, state, joystick, button):
+    def on_joybutton_release(self, joystick, button):
         self.active_view.on_joybutton_release(self.state, joystick, button)
 
     def update(self, dt):
@@ -462,7 +462,7 @@ class Manager(object):
         else:
             x, y = None, None 
 
-        new_view = self.state.update(dt, None, None)
+        new_view = self.state.update(dt, x, y)
         if new_view != self.active_view.NAME:
             self.set_active_view(new_view)    
     
