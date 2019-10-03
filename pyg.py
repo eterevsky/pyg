@@ -100,7 +100,9 @@ def move_and_collide(box, vx, vy, dt, boxes, bounciness=0):
 
 
 class Jump(object):
-    # The amount of time after
+    # The amount of time after the player presses jump button, until it has to
+    # touch a horizontal surface (bounce).
+    JUMP_LAG = 0.1
     # The amount of time for which we accelerate vertically after we've bounced.
     JUMP_DURATION = 0.1
     # Vertical acceleration during the jump duration
@@ -111,7 +113,12 @@ class Jump(object):
         self.bounce_time = None
     
     def bounce(self, t):
-        self.bounce_time = None
+        if t - self.press_time < self.JUMP_LAG and self.bounce_time is None:
+            self.bounce_time = t
+    
+    @property
+    def bounced(self):
+        return self.bounce_time is not None
     
     def vert_acc(self, t):
         if self.bounce_time is None or t - self.bounce_time > self.JUMP_DURATION:
@@ -149,7 +156,7 @@ class State(object):
         self.dead = False
         self.won = False
 
-        self.
+        self.jump_params = None
 
     @property
     def rotation(self):
@@ -160,13 +167,13 @@ class State(object):
 
     def jump(self, start):
         """Initiate or finish the jump"""
-        for box in self.boxes:
-            if self.ghost_box.overlaps_x(box) and 0 <= self.ghost_box.y0 - box.y1 < 0.1:
-                self.vy = 10
+        self.jump_params = Jump(time.time()) if start else None
 
     def update(self, dt, acc_x, acc_y):
         if self.dead: return 'dead'
         if self.won: return 'win'
+
+        t = time.time()
 
         if acc_x is None:
             self.player_acc = min(1, max(-1, self.player_acc))
@@ -192,7 +199,14 @@ class State(object):
         elif self.vx < -0.1:
             self.direction = 0
 
-        self.vy -= 15 * dt
+        ay = -15
+        if self.jump_params is not None:
+            if not self.jump_params.bounced:
+                for box in self.boxes:
+                    if self.ghost_box.overlaps_x(box) and 0 <= self.ghost_box.y0 - box.y1 < 0.1:
+                        self.jump_params.bounce(t)
+            ay += self.jump_params.vert_acc(t)
+        self.vy += ay * dt
 
         self.ghost_box, self.vx, self.vy = move_and_collide(
             self.ghost_box, self.vx, self.vy, dt, self.boxes, 0)
@@ -268,6 +282,9 @@ class View(object):
         pass
 
     def on_joybutton_press(self, state, joystick, button):
+        pass
+
+    def on_joybutton_release(self, state, joystick, button):
         pass
 
 
@@ -364,17 +381,23 @@ class NormalView(View):
         elif symbol == key.LEFT:
             state.accelerate(-1)
         elif symbol == key.SPACE:
-            state.jump()
+            state.jump(True)
 
     def on_key_release(self, state, symbol, modifiers):
         if symbol == key.RIGHT:
             state.accelerate(-1)
         elif symbol == key.LEFT:
             state.accelerate(1)
+        elif symbol == key.SPACE:
+            state.jump(False)
 
     def on_joybutton_press(self, state, joystick, button):
         if button == 0:
-            state.jump()
+            state.jump(True)
+
+    def on_joybutton_release(self, state, joystick, button):
+        if button == 0:
+            state.jump(False)
 
 
 class Manager(object):
@@ -429,6 +452,9 @@ class Manager(object):
 
     def on_joybutton_press(self, state, joystick, button):
         self.active_view.on_joybutton_press(self.state, joystick, button)
+
+    def on_joybutton_release(self, state, joystick, button):
+        self.active_view.on_joybutton_release(self.state, joystick, button)
 
     def update(self, dt):
         if self.joystick:
