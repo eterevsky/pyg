@@ -99,6 +99,34 @@ def move_and_collide(box, vx, vy, dt, boxes, bounciness=0):
     return box, vx, vy
 
 
+class Jump(object):
+    # The amount of time after the player presses jump button, until it has to
+    # touch a horizontal surface (bounce).
+    JUMP_LAG = 0.1
+    # The amount of time for which we accelerate vertically after we've bounced.
+    JUMP_DURATION = 0.1
+    # Vertical acceleration during the jump duration
+    ACCELERATION = 100
+
+    def __init__(self, t):
+        self.press_time = t
+        self.bounce_time = None
+    
+    def bounce(self, t):
+        if t - self.press_time < self.JUMP_LAG and self.bounce_time is None:
+            self.bounce_time = t
+    
+    @property
+    def bounced(self):
+        return self.bounce_time is not None
+    
+    def vert_acc(self, t):
+        if self.bounce_time is None or t - self.bounce_time > self.JUMP_DURATION:
+            return 0
+        else:
+            return self.ACCELERATION
+
+
 class State(object):
     """The state of the game world."""
 
@@ -128,6 +156,8 @@ class State(object):
         self.dead = False
         self.won = False
 
+        self.jump_params = None
+
     @property
     def rotation(self):
         return 5 * math.sin((time.time() % 2) * math.pi)
@@ -135,14 +165,15 @@ class State(object):
     def accelerate(self, dir):
         self.player_acc += dir
 
-    def jump(self):
-        for box in self.boxes:
-            if self.ghost_box.overlaps_x(box) and 0 <= self.ghost_box.y0 - box.y1 < 0.1:
-                self.vy = 10
+    def jump(self, start):
+        """Initiate or finish the jump"""
+        self.jump_params = Jump(time.time()) if start else None
 
     def update(self, dt, acc_x, acc_y):
         if self.dead: return 'dead'
         if self.won: return 'win'
+
+        t = time.time()
 
         if acc_x is None:
             self.player_acc = min(1, max(-1, self.player_acc))
@@ -168,7 +199,14 @@ class State(object):
         elif self.vx < -0.1:
             self.direction = 0
 
-        self.vy -= 15 * dt
+        ay = -15
+        if self.jump_params is not None:
+            if not self.jump_params.bounced:
+                for box in self.boxes:
+                    if self.ghost_box.overlaps_x(box) and 0 <= self.ghost_box.y0 - box.y1 < 0.1:
+                        self.jump_params.bounce(t)
+            ay += self.jump_params.vert_acc(t)
+        self.vy += ay * dt
 
         self.ghost_box, self.vx, self.vy = move_and_collide(
             self.ghost_box, self.vx, self.vy, dt, self.boxes, 0)
@@ -244,6 +282,9 @@ class View(object):
         pass
 
     def on_joybutton_press(self, state, joystick, button):
+        pass
+
+    def on_joybutton_release(self, state, joystick, button):
         pass
 
 
@@ -340,17 +381,23 @@ class NormalView(View):
         elif symbol == key.LEFT:
             state.accelerate(-1)
         elif symbol == key.SPACE:
-            state.jump()
+            state.jump(True)
 
     def on_key_release(self, state, symbol, modifiers):
         if symbol == key.RIGHT:
             state.accelerate(-1)
         elif symbol == key.LEFT:
             state.accelerate(1)
+        elif symbol == key.SPACE:
+            state.jump(False)
 
     def on_joybutton_press(self, state, joystick, button):
         if button == 0:
-            state.jump()
+            state.jump(True)
+
+    def on_joybutton_release(self, state, joystick, button):
+        if button == 0:
+            state.jump(False)
 
 
 class Manager(object):
@@ -405,8 +452,11 @@ class Manager(object):
     def on_key_release(self, symbol, modifiers):
         self.active_view.on_key_release(self.state, symbol, modifiers)
 
-    def on_joybutton_press(self, state, joystick, button):
+    def on_joybutton_press(self, joystick, button):
         self.active_view.on_joybutton_press(self.state, joystick, button)
+
+    def on_joybutton_release(self, joystick, button):
+        self.active_view.on_joybutton_release(self.state, joystick, button)
 
     def update(self, dt):
         if self.joystick:
@@ -414,7 +464,7 @@ class Manager(object):
         else:
             x, y = None, None 
 
-        new_view = self.state.update(dt, None, None)
+        new_view = self.state.update(dt, x, y)
         if new_view != self.active_view.NAME:
             self.set_active_view(new_view)    
     
