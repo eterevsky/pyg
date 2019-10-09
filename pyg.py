@@ -219,7 +219,7 @@ class State(object):
             self.won = True
             return 'win'
         
-        return 'normal'
+        return 'world'
 
 
 class Viewport(object):
@@ -315,10 +315,10 @@ class WinView(View):
         label.draw()
     
 
-class NormalView(View):
+class WorldView(View):
     """Main loop and interface with Pyglet."""
 
-    NAME = 'normal'
+    NAME = 'world'
 
     def __init__(self):
         self.viewport = Viewport()
@@ -472,10 +472,10 @@ class Manager(object):
 def main():
     state = State()
     manager = Manager(state)
-    manager.add_view(NormalView())
+    manager.add_view(WorldView())
     manager.add_view(DeadView())
     manager.add_view(WinView())
-    manager.set_active_view(NormalView.NAME)
+    manager.set_active_view(WorldView.NAME)
     pyglet.app.run()
 
 
