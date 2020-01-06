@@ -2,6 +2,7 @@ import math
 import pyglet
 from pyglet import gl
 from pyglet.window import key
+import random
 import time
 
 
@@ -127,6 +128,14 @@ class Jump(object):
             return self.ACCELERATION
 
 
+class Droplet(object):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.vx = 0
+        self.vy = 0
+
+
 class State(object):
     """The state of the game world."""
 
@@ -138,6 +147,8 @@ class State(object):
             BoundingBox(2, 0, 3, 1),
             BoundingBox(4, 0, 6, 2),
         ]
+        self.droplets = []
+        self.wind = 0
         for x in range(10):
             for y in range(3):
                 self.boxes.append(BoundingBox(2.5*x + (y % 2) + 12,
@@ -169,6 +180,23 @@ class State(object):
         """Initiate or finish the jump"""
         self.jump_params = Jump(time.time()) if start else None
 
+    def update_droplets(self, dt):
+        self.wind += 0.1 * random.random() - 0.05
+        for i in range(int(200 * dt * random.random())):
+            x = int(200 * random.random()) - 100
+            self.droplets.append(Droplet(x, 20))
+        vy_delta = -5 * dt
+        v_coef = pow(0.9, dt)
+        for droplet in self.droplets:
+            droplet.vx += self.wind
+            droplet.vy += vy_delta 
+            droplet.vx *= v_coef
+            droplet.vy *= v_coef
+            droplet.x += dt * droplet.vx
+            droplet.y += dt * droplet.vy
+        
+        self.droplets = [droplet for droplet in self.droplets if droplet.y >= 0]
+
     def update(self, dt, acc_x, acc_y):
         if self.dead: return 'dead'
         if self.won: return 'win'
@@ -178,7 +206,6 @@ class State(object):
         if acc_x is None:
             self.player_acc = min(1, max(-1, self.player_acc))
             ax = 20 * self.player_acc
-
         else:
             ax = 20 * acc_x
 
@@ -219,6 +246,8 @@ class State(object):
             self.won = True
             return 'win'
         
+        self.update_droplets(dt)
+
         return 'world'
 
 
@@ -354,6 +383,12 @@ class WorldView(View):
         coords.extend((x0, y0,  x1, y0,  x1, y1,  x0, y1))
         colors.extend([0, 128, 0] * 4)
 
+        for droplet in state.droplets:
+            x0, y0 = self.viewport.transform(droplet.x, droplet.y)
+            x1, y1 = self.viewport.transform(droplet.x + 0.2, droplet.y + 0.2)
+            coords.extend((x0, y0,  x1, y0,  x1, y1,  x0, y1))
+            colors.extend([64, 64, 255] * 4)
+
         pyglet.graphics.draw(int(len(coords) / 2), pyglet.gl.GL_QUADS,
                              ('v2f', coords), ('c3B', colors))
 
@@ -403,27 +438,37 @@ class WorldView(View):
 class Manager(object):
     def __init__(self, state):
         self.state = state
+        print('Creating window... ', end='', flush=True)
         self.window = pyglet.window.Window(
             config=gl.Config(double_buffer=True), fullscreen=False)
+        print('done', flush=True)
 
+        # print('Looking for joysticks... ', end='', flush=True)
         self.joystick = None
-        joysticks = pyglet.input.get_joysticks()
-        if joysticks:
-            self.joystick = joysticks[0]
-            print('Found joystick', self.joystick)
-            self.joystick.open()
-            self.joystick.push_handlers(self)
+        # joysticks = pyglet.input.get_joysticks()
+        # prinr('done', flush=True)
+        # if joysticks:
+        #     self.joystick = joysticks[0]
+        #     print('Found joystick', self.joystick, flush=True)
+        #     self.joystick.open()
+        #     self.joystick.push_handlers(self)
 
         self.views = {}
         self.add_view(NoopView())
         self.set_active_view(NoopView.NAME)
     
+        print('Initializing FPS display... ', end='', flush=True)
         self.fps = pyglet.window.FPSDisplay(self.window)
         self.fps.label = pyglet.text.Label(
             anchor_x='right', anchor_y='top', x=self.window.width, y=self.window.height)
+        print('done', flush=True)
 
+        print('Scheduling clock... ', end='', flush=True)
         pyglet.clock.schedule_interval(self.update, 1/240)
+        print('done', flush=True)
+        print('Pushing handlers... ', end='', flush=True)
         self.window.push_handlers(self)
+        print('done', flush=True)
 
     def add_view(self, view):
         self.views[view.NAME] = view
@@ -472,10 +517,12 @@ class Manager(object):
 def main():
     state = State()
     manager = Manager(state)
+    print('Created Manager')
     manager.add_view(WorldView())
     manager.add_view(DeadView())
     manager.add_view(WinView())
     manager.set_active_view(WorldView.NAME)
+    print('Starting pyglet app')
     pyglet.app.run()
 
 
